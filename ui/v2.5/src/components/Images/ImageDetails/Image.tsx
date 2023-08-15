@@ -1,7 +1,7 @@
 import { Tab, Nav, Dropdown } from "react-bootstrap";
 import React, { useEffect, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
-import { useParams, useHistory, Link } from "react-router-dom";
+import { useHistory, Link, RouteComponentProps } from "react-router-dom";
 import { Helmet } from "react-helmet";
 import {
   useFindImage,
@@ -17,6 +17,7 @@ import { Icon } from "src/components/Shared/Icon";
 import { Counter } from "src/components/Shared/Counter";
 import { useToast } from "src/hooks/Toast";
 import * as Mousetrap from "mousetrap";
+import * as GQL from "src/core/generated-graphql";
 import { OCounterButton } from "src/components/Scenes/SceneDetails/OCounterButton";
 import { OrganizedButton } from "src/components/Scenes/SceneDetails/OrganizedButton";
 import { ImageFileInfoPanel } from "./ImageFileInfoPanel";
@@ -25,22 +26,25 @@ import { ImageDetailPanel } from "./ImageDetailPanel";
 import { DeleteImagesDialog } from "../DeleteImagesDialog";
 import { faEllipsisV } from "@fortawesome/free-solid-svg-icons";
 import { objectPath, objectTitle } from "src/core/files";
+import { isVideo } from "src/utils/visualFile";
+import { useScrollToTopOnMount } from "src/hooks/scrollToTop";
 
-interface IImageParams {
-  id?: string;
+interface IProps {
+  image: GQL.ImageDataFragment;
 }
 
-export const Image: React.FC = () => {
-  const { id = "new" } = useParams<IImageParams>();
+interface IImageParams {
+  id: string;
+}
+
+const ImagePage: React.FC<IProps> = ({ image }) => {
   const history = useHistory();
   const Toast = useToast();
   const intl = useIntl();
 
-  const { data, error, loading } = useFindImage(id);
-  const image = data?.findImage;
-  const [incrementO] = useImageIncrementO(image?.id ?? "0");
-  const [decrementO] = useImageDecrementO(image?.id ?? "0");
-  const [resetO] = useImageResetO(image?.id ?? "0");
+  const [incrementO] = useImageIncrementO(image.id);
+  const [decrementO] = useImageDecrementO(image.id);
+  const [resetO] = useImageResetO(image.id);
 
   const [updateImage] = useImageUpdate();
 
@@ -49,6 +53,18 @@ export const Image: React.FC = () => {
   const [activeTabKey, setActiveTabKey] = useState("image-details-panel");
 
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState<boolean>(false);
+
+  async function onSave(input: GQL.ImageUpdateInput) {
+    await updateImage({
+      variables: { input },
+    });
+    Toast.success({
+      content: intl.formatMessage(
+        { id: "toast.updated_entity" },
+        { entity: intl.formatMessage({ id: "image" }).toLocaleLowerCase() }
+      ),
+    });
+  }
 
   async function onRescan() {
     if (!image || !image.visual_files.length) {
@@ -76,8 +92,8 @@ export const Image: React.FC = () => {
       await updateImage({
         variables: {
           input: {
-            id: image?.id ?? "",
-            organized: !image?.organized,
+            id: image.id,
+            organized: !image.organized,
           },
         },
       });
@@ -181,9 +197,7 @@ export const Image: React.FC = () => {
             <Nav.Item>
               <Nav.Link eventKey="image-file-info-panel">
                 <FormattedMessage id="file_info" />
-                {image.visual_files.length > 1 && (
-                  <Counter count={image.visual_files.length ?? 0} />
-                )}
+                <Counter count={image.visual_files.length} hideZero hideOne />
               </Nav.Link>
             </Nav.Item>
             <Nav.Item>
@@ -224,6 +238,7 @@ export const Image: React.FC = () => {
             <ImageEditPanel
               isVisible={activeTabKey === "image-edit-panel"}
               image={image}
+              onSubmit={onSave}
               onDelete={() => setIsDeleteAlertOpen(true)}
             />
           </Tab.Pane>
@@ -249,19 +264,8 @@ export const Image: React.FC = () => {
     };
   });
 
-  if (loading) {
-    return <LoadingIndicator />;
-  }
-
-  if (error) return <ErrorMessage error={error.message} />;
-
-  if (!image) {
-    return <ErrorMessage error={`No image found with id ${id}.`} />;
-  }
-
   const title = objectTitle(image);
-  const ImageView =
-    image.visual_files[0].__typename == "VideoFile" ? "video" : "img";
+  const ImageView = isVideo(image.visual_files[0]) ? "video" : "img";
 
   return (
     <div className="row">
@@ -305,3 +309,21 @@ export const Image: React.FC = () => {
     </div>
   );
 };
+
+const ImageLoader: React.FC<RouteComponentProps<IImageParams>> = ({
+  match,
+}) => {
+  const { id } = match.params;
+  const { data, loading, error } = useFindImage(id);
+
+  useScrollToTopOnMount();
+
+  if (loading) return <LoadingIndicator />;
+  if (error) return <ErrorMessage error={error.message} />;
+  if (!data?.findImage)
+    return <ErrorMessage error={`No image found with id ${id}.`} />;
+
+  return <ImagePage image={data.findImage} />;
+};
+
+export default ImageLoader;

@@ -440,15 +440,21 @@ func getRootObjects() []interface{} {
 	return objs
 }
 
+func getSortDirection(sceneFilter *models.SceneFilterType, sort string) models.SortDirectionEnum {
+	direction := models.SortDirectionEnumDesc
+	if sort == "title" {
+		direction = models.SortDirectionEnumAsc
+	}
+
+	return direction
+}
+
 func (me *contentDirectoryService) getVideos(sceneFilter *models.SceneFilterType, parentID string, host string) []interface{} {
 	var objs []interface{}
 
 	if err := txn.WithReadTxn(context.TODO(), me.txnManager, func(ctx context.Context) error {
 		sort := me.VideoSortOrder
-		direction := models.SortDirectionEnumDesc
-		if sort == "title" {
-			direction = models.SortDirectionEnumAsc
-		}
+		direction := getSortDirection(sceneFilter, sort)
 		findFilter := &models.FindFilterType{
 			PerPage:   &pageSize,
 			Sort:      &sort,
@@ -497,8 +503,10 @@ func (me *contentDirectoryService) getPageVideos(sceneFilter *models.SceneFilter
 			parentID:    parentID,
 		}
 
+		sort := me.VideoSortOrder
+		direction := getSortDirection(sceneFilter, sort)
 		var err error
-		objs, err = pager.getPageVideos(ctx, me.repository.SceneFinder, me.repository.FileFinder, page, host)
+		objs, err = pager.getPageVideos(ctx, me.repository.SceneFinder, me.repository.FileFinder, page, host, sort, direction)
 		if err != nil {
 			return err
 		}
@@ -539,7 +547,7 @@ func (me *contentDirectoryService) getStudios() []interface{} {
 		}
 
 		for _, s := range studios {
-			objs = append(objs, makeStorageFolder("studios/"+strconv.Itoa(s.ID), s.Name.String, "studios"))
+			objs = append(objs, makeStorageFolder("studios/"+strconv.Itoa(s.ID), s.Name, "studios"))
 		}
 
 		return nil
@@ -656,7 +664,7 @@ func (me *contentDirectoryService) getMovies() []interface{} {
 		}
 
 		for _, s := range movies {
-			objs = append(objs, makeStorageFolder("movies/"+strconv.Itoa(s.ID), s.Name.String, "movies"))
+			objs = append(objs, makeStorageFolder("movies/"+strconv.Itoa(s.ID), s.Name, "movies"))
 		}
 
 		return nil
